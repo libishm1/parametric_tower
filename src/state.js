@@ -17,7 +17,7 @@ export const ranges = {
   columnCount: { min: 2, max: 10, step: 1, default: 4 },
   visibleTiers: { min: 1, max: 15, step: 1, default: 15 },
   wallThickness: { min: 40, max: 200, step: 5, default: 80 },
-  wallSpacing: { min: 150, max: 500, step: 10, default: 250 },
+  wallSpacing: { min: 150, max: 800, step: 10, default: 600 },
   innerWalls: { min: 0, max: 3, step: 1, default: 1 }
 };
 

@@ -1,6 +1,6 @@
-import * as THREE from "../node_modules/three/build/three.module.js";
-import { OrbitControls } from "../node_modules/three/examples/jsm/controls/OrbitControls.js";
-import { ImprovedNoise } from "../node_modules/three/examples/jsm/math/ImprovedNoise.js";
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import { palette } from "./state.js";
 
 const noiseGen = new ImprovedNoise();
@@ -242,8 +242,7 @@ export function createRenderer(container) {
 export function createCamera(container) {
   const aspect = window.innerWidth / window.innerHeight;
   const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 5000);
-  camera.position.set(400, 400, 600);
-  camera.lookAt(0, 200, 0);
+  camera.position.set(700, 450, 900);
   return camera;
 }
 

@@ -13,9 +13,12 @@ export const ranges = {
   striations: { min: 3, max: 15, step: 1, default: 7 },
   noiseIntensity: { min: 0, max: 30, step: 1, default: 10 },
   baseScale: { min: 0.5, max: 2.0, step: 0.1, default: 1.0 },
-  doorHeightOffset: { min: 0.0, max: 1.0, step: 0.05, default: 1.0 },
+  doorHeightOffset: { min: 0.0, max: 1.0, step: 0.05, default: 0.7 },
   columnCount: { min: 2, max: 10, step: 1, default: 4 },
-  visibleTiers: { min: 1, max: 15, step: 1, default: 15 }
+  visibleTiers: { min: 1, max: 15, step: 1, default: 15 },
+  wallThickness: { min: 40, max: 200, step: 5, default: 80 },
+  wallSpacing: { min: 150, max: 500, step: 10, default: 250 },
+  innerWalls: { min: 0, max: 3, step: 1, default: 1 }
 };
 
 export const defaultState = Object.fromEntries(

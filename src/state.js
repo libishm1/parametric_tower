@@ -18,7 +18,9 @@ export const ranges = {
   visibleTiers: { min: 1, max: 15, step: 1, default: 15 },
   wallThickness: { min: 40, max: 200, step: 5, default: 80 },
   wallSpacing: { min: 150, max: 800, step: 10, default: 600 },
-  innerWalls: { min: 0, max: 3, step: 1, default: 1 }
+  innerWalls: { min: 0, max: 3, step: 1, default: 1 },
+  shrineProtrude: { min: 0, max: 0.5, step: 0.01, default: 0.125 },
+  shrineColorIndex: { min: 0, max: 4, step: 1, default: 0 }
 };
 
 export const defaultState = Object.fromEntries(

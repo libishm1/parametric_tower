@@ -311,19 +311,25 @@ function addStatueRow(container, width, height, depth, count) {
   }
 }
 
-function addMiniShrines(container, width, height, depth) {
+function addMiniShrines(container, width, height, depth, protrudeFactor = 0.125, colorHex = 0xffc896) {
   const miniW = width * 0.15;
   const miniD = depth * 0.15;
   const miniH = height * 1.2;
-  const shrineMat = materials.plaster(0xffc896);
+  const shrineMat = materials.plaster(colorHex);
   const faceMat = materials.stoneDark();
   const roofMat = materials.stone();
 
+  // target ~1/8 protruding: center sits miniW/2 - miniW/8 inside the face plane
+  // Move back to previous near-face placement: 0.75 inset factor
+  const protrudeX = miniW * 0.75;
+  const protrudeZ = miniD * 0.75;
   const positions = [
-    { x: -width / 2 + miniW * 0.75, z: 0, rot: 0 },
-    { x: width / 2 - miniW * 0.75, z: 0, rot: Math.PI },
-    { x: 0, z: -depth / 2 + miniD * 0.75, rot: 0 },
-    { x: 0, z: depth / 2 - miniD * 0.75, rot: Math.PI }
+    // left / right faces (push out along X)
+    { x: -width / 2 - miniW / 2 + protrudeX, z: 0, rot: 0 },
+    { x: width / 2 + miniW / 2 - protrudeX, z: 0, rot: Math.PI },
+    // front / back faces (push out along Z)
+    { x: 0, z: -depth / 2 - miniD / 2 + protrudeZ, rot: 0 },
+    { x: 0, z: depth / 2 + miniD / 2 - protrudeZ, rot: Math.PI }
   ];
 
   for (const pos of positions) {
@@ -489,9 +495,9 @@ export function buildTower(state) {
       const noiseOffset = (noise2d((i + j) * 0.3, j * 0.17) - 0.5) * (noiseIntensity * 0.5);
       const yBase = plinthH + baseH + yOffset + noiseOffset;
 
-      const colorHex = palette[(i + j) % palette.length];
-      const layer = new THREE.Group();
-      layer.position.y = yBase;
+    const colorHex = palette[(i + j) % palette.length];
+    const layer = new THREE.Group();
+    layer.position.y = yBase;
 
       const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials.plaster(colorHex));
       box.position.y = h / 2;
@@ -503,7 +509,8 @@ export function buildTower(state) {
       addStatueRow(layer, w, h, d, Math.max(3, columnCount - 2));
       const isTopRendered = i === Math.min(tiers, visibleTiers) - 1;
       if (!isTopRendered) {
-        addMiniShrines(layer, w, h, d);
+        const shrineColor = palette[state.shrineColorIndex % palette.length];
+        addMiniShrines(layer, w, h, d, state.shrineProtrude ?? 0.125, shrineColor);
       }
       addColumns(layer, w, h, d, columnCount, colorHex);
       addCornice(layer, w, d, colorHex);

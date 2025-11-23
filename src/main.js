@@ -43,6 +43,9 @@ scene.add(axes);
 const overlay = document.getElementById("overlay");
 if (overlay) overlay.textContent = "Scene initializing...";
 
+const autoRotate = { enabled: false, speed: 0.4 };
+const clock = new THREE.Clock();
+
 let state = { ...defaultState };
 let temple = null;
 let hasFittedView = false;
@@ -63,6 +66,8 @@ gui
   .add(sceneMode, "mode", ["Day", "Dusk"])
   .name("Scene")
   .onChange(() => applyLighting());
+gui.add(autoRotate, "enabled").name("Auto rotate");
+gui.add(autoRotate, "speed", 0.05, 2, 0.05).name("Rotate speed");
 
 function disposeObject(obj) {
   obj.traverse(child => {
@@ -86,6 +91,7 @@ function rebuild(options = { fit: false }) {
   }
   try {
     temple = buildTempleComplex(state);
+    temple.rotation.y = 0;
     scene.add(temple);
     if (options.fit || !hasFittedView) {
       fitView(temple);
@@ -136,6 +142,10 @@ function fitView(object) {
 }
 
 renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  if (autoRotate.enabled && temple) {
+    temple.rotation.y += autoRotate.speed * dt;
+  }
   controls.update();
   renderer.render(scene, camera);
 });

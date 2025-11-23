@@ -1,3 +1,4 @@
+<img width="1268" height="589" alt="image" src="https://github.com/user-attachments/assets/84a32a83-de3a-42d1-ba37-226c42524ab8" />
 # parametric_tower
 
 Parametric Gopuram generator rebuilt in Three.js with the original p5.js controls mirrored for 3D navigation, lighting, and material hooks. The tower is constructed from configurable tiers, cornices, columns, and kalashas with Panchavarnam-inspired palette cycling.

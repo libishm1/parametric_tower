@@ -24,3 +24,7 @@ Parametric Gopuram generator rebuilt in Three.js with the original p5.js control
 - `doorHeightOffset`: door position along the base face (0 = top, 1 = toward bottom).
 - `columnCount`: number of columns per face stripe.
 - `visibleTiers`: limit how many tiers are rendered (for animation-style reveals).
+
+acess website here ,
+
+https://libishm1.github.io/parametric_tower/

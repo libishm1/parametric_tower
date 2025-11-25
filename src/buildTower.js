@@ -1,11 +1,17 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
-import { palette } from "./state.js";
+import { palette, defaultProfile } from "./state.js";
 
 const noiseGen = new ImprovedNoise();
 const materialCache = new Map();
 const textureCache = new Map();
+
+function setInstanceMatrix(mesh, index, position, rotation = new THREE.Euler(), scale = new THREE.Vector3(1, 1, 1)) {
+  const m = new THREE.Matrix4();
+  m.compose(position, new THREE.Quaternion().setFromEuler(rotation), scale);
+  mesh.setMatrixAt(index, m);
+}
 
 function makeNoiseTexture(baseColor, noiseColor, size = 256, density = 0.08) {
   const key = `${baseColor}-${noiseColor}-${size}-${density}`;
@@ -40,26 +46,28 @@ function getMaterial(key, params) {
 }
 
 function createMaterials() {
-  const stoneTex = makeNoiseTexture("#9a9387", "#5c5348", 256, 0.08);
-  const plasterTex = makeNoiseTexture("#f7f3ec", "#dcd4c7", 256, 0.04);
+  // Granite base: cool gray with subtle speckle.
+  const graniteTex = makeNoiseTexture("#8e929a", "#5c6068", 256, 0.07);
+  // Lime plaster: warm off-white with subtle variation.
+  const plasterTex = makeNoiseTexture("#f3f1e4", "#d8d2be", 256, 0.045);
   const woodTex = makeNoiseTexture("#5a3a1f", "#2f1f12", 256, 0.05);
   const metalTex = makeNoiseTexture("#d4a33a", "#8f6a1f", 256, 0.03);
-  stoneTex.repeat.set(4, 4);
+  graniteTex.repeat.set(4, 4);
   plasterTex.repeat.set(3, 3);
   woodTex.repeat.set(2, 2);
   metalTex.repeat.set(2, 2);
   return {
     stone: () =>
       getMaterial("stone", {
-        color: 0x9a9387,
-        map: stoneTex,
+        color: 0x8e929a,
+        map: graniteTex,
         roughness: 0.9,
-        metalness: 0.02
+        metalness: 0.03
       }),
     stoneDark: () =>
       getMaterial("stoneDark", {
-        color: 0x6a6358,
-        map: stoneTex,
+        color: 0x585d66,
+        map: graniteTex,
         roughness: 0.95,
         metalness: 0.02
       }),
@@ -95,6 +103,103 @@ function createMaterials() {
 }
 
 const materials = createMaterials();
+
+function fractalOutline(width, depth, levels = 4, shrink = 0.8) {
+  const w2 = width / 2;
+  const d2 = depth / 2;
+  const xs = [];
+  const zs = [];
+  for (let i = 0; i < levels; i++) {
+    const f = Math.pow(shrink, i);
+    xs.push(w2 * f);
+    zs.push(d2 * f);
+  }
+
+  const pts = [];
+  // start at outer top-right
+  pts.push(new THREE.Vector2(xs[0], -zs[0]));
+  // top edge stepping inward
+  for (let i = 0; i < levels - 1; i++) {
+    pts.push(new THREE.Vector2(xs[i], -zs[i + 1]));
+    pts.push(new THREE.Vector2(-xs[i + 1], -zs[i + 1]));
+  }
+  pts.push(new THREE.Vector2(-xs[levels - 1], -zs[levels - 1]));
+  // left edge
+  for (let i = levels - 1; i > 0; i--) {
+    pts.push(new THREE.Vector2(-xs[i], zs[i - 1]));
+    pts.push(new THREE.Vector2(-xs[i - 1], zs[i - 1]));
+  }
+  pts.push(new THREE.Vector2(-xs[0], zs[0]));
+  // bottom edge
+  for (let i = 0; i < levels - 1; i++) {
+    pts.push(new THREE.Vector2(xs[i + 1], zs[i]));
+    pts.push(new THREE.Vector2(xs[i + 1], zs[i + 1]));
+  }
+  pts.push(new THREE.Vector2(xs[levels - 1], zs[levels - 1]));
+  // right edge
+  for (let i = levels - 1; i > 0; i--) {
+    pts.push(new THREE.Vector2(xs[i], -zs[i - 1]));
+    pts.push(new THREE.Vector2(xs[i - 1], -zs[i - 1]));
+  }
+
+  const unique = [];
+  pts.forEach(p => {
+    if (!unique.length || !p.equals(unique[unique.length - 1])) unique.push(p);
+  });
+  if (!unique[0].equals(unique[unique.length - 1])) unique.push(unique[0].clone());
+  return unique;
+}
+
+function profileToShape(profilePoints, width, depth, fallbackSteps = 4, insetFrac = 0) {
+  const pts = (profilePoints && profilePoints.length ? profilePoints : defaultProfile).map(p =>
+    Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y }
+  );
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  pts.forEach(p => {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  });
+
+  const spanX = Math.max(1e-3, maxX - minX);
+  const spanY = Math.max(1e-3, maxY - minY);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  // Choose orientation that best inscribes the target rectangle; apply a slight inset if requested.
+  const effectiveW = Math.max(1e-3, width * (1 - insetFrac));
+  const effectiveD = Math.max(1e-3, depth * (1 - insetFrac));
+  const scaleA = { sx: effectiveW / spanX, sy: effectiveD / spanY, min: Math.min(effectiveW / spanX, effectiveD / spanY), rotated: false };
+  const scaleB = { sx: effectiveW / spanY, sy: effectiveD / spanX, min: Math.min(effectiveW / spanY, effectiveD / spanX), rotated: true };
+  const chosen = scaleB.min > scaleA.min ? scaleB : scaleA;
+
+  const scaled = pts.map(p => {
+    const px = p.x - cx;
+    const py = p.y - cy;
+    if (chosen.rotated) {
+      // rotate 90deg clockwise when swapping axes
+      return new THREE.Vector2(py * chosen.sx, -px * chosen.sy);
+    }
+    return new THREE.Vector2(px * chosen.sx, py * chosen.sy);
+  });
+
+  const unique = [];
+  scaled.forEach(v => {
+    if (!unique.length || !v.equals(unique[unique.length - 1])) unique.push(v);
+  });
+  if (unique.length && !unique[0].equals(unique[unique.length - 1])) unique.push(unique[0].clone());
+
+  if (unique.length < 4) {
+    // Fallback to previous fractal outline if the custom profile is invalid.
+    const fallback = fractalOutline(width, depth, fallbackSteps, 0.82);
+    return new THREE.Shape(fallback);
+  }
+  return new THREE.Shape(unique);
+}
 
 function noise2d(x, z) {
   // ImprovedNoise returns -1..1; normalize to 0..1
@@ -160,14 +265,30 @@ function addStripes(container, width, height, depth, colorHex) {
   }
 }
 
-function addCornice(container, width, depth, baseColor) {
+function addCornice(container, width, depth, baseColor, profilePoints, steps = 4) {
   const darker = new THREE.Color(baseColor).lerp(new THREE.Color(0x000000), 0.2);
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(width * 1.06, 5, depth * 1.06),
-    materials.plaster(darker.getHex())
-  );
-  mesh.position.y = -2;
-  container.add(mesh);
+  const columnWidth = 6; // matches cylinder diameter in addColumns
+  const corniceH = columnWidth * 0.5; // give thickness so it is not just a plane
+  const scaleFactor = 1.14; // slightly wider to cover column tops
+  const shape = profileToShape(profilePoints, width * scaleFactor, depth * scaleFactor, steps);
+
+  const makeCorniceMesh = (height, sf = 1) => {
+    const shp = profileToShape(profilePoints, width * scaleFactor * sf, depth * scaleFactor * sf, steps);
+    const geo = new THREE.ExtrudeGeometry(shp, { depth: height, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, 0, height / 2);
+    return new THREE.Mesh(geo, materials.plaster(darker.getHex()));
+  };
+
+  const main = makeCorniceMesh(corniceH, 1);
+  main.position.y = -corniceH * 0.4;
+  container.add(main);
+
+  // Secondary stepped cornice slightly inset and raised for a stepped effect.
+  const secondaryH = corniceH * 0.65;
+  const secondary = makeCorniceMesh(secondaryH, 0.96);
+  secondary.position.y = main.position.y + corniceH * 0.8;
+  container.add(secondary);
 }
 
 function addPlinth(baseW, baseD, plinthH) {
@@ -255,11 +376,16 @@ function addNiches(container, width, height, depth) {
 function addPilasters(container, width, height, depth, count, mat) {
   const geo = new THREE.BoxGeometry(6, height * 0.85, 8);
   const y = height * 0.35;
+  const pilasterDepth = 8;
+  const inset = Math.min(12, Math.min(width, depth) * 0.03);
+  const faceOffset = Math.max(pilasterDepth / 2, depth / 2 - inset - pilasterDepth * 0.5);
+  const minX = -width / 2 + 8;
+  const maxX = width / 2 - 8;
   for (let side = -1; side <= 1; side += 2) {
     for (let k = 0; k < count; k++) {
-      const x = THREE.MathUtils.lerp(-width / 2 + 8, width / 2 - 8, k / Math.max(1, count - 1));
+      const x = THREE.MathUtils.lerp(minX, maxX, k / Math.max(1, count - 1));
       const pilaster = new THREE.Mesh(geo, mat);
-      pilaster.position.set(x, y, (depth / 2 + 4) * side);
+      pilaster.position.set(x, y, faceOffset * side);
       container.add(pilaster);
     }
   }
@@ -268,15 +394,17 @@ function addPilasters(container, width, height, depth, count, mat) {
 function addBeadRow(container, width, depth, y, mat) {
   const beadGeo = new THREE.SphereGeometry(2.2, 8, 6);
   const count = Math.max(6, Math.floor(width / 20));
+  const total = count * 2;
+  const inst = new THREE.InstancedMesh(beadGeo, mat, total);
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const inset = Math.min(10, Math.min(width, depth) * 0.02);
+  let idx = 0;
   for (let i = 0; i < count; i++) {
     const x = THREE.MathUtils.lerp(-width / 2 + 6, width / 2 - 6, i / Math.max(1, count - 1));
-    const b1 = new THREE.Mesh(beadGeo, mat);
-    b1.position.set(x, y, depth / 2 + 2);
-    container.add(b1);
-    const b2 = new THREE.Mesh(beadGeo, mat);
-    b2.position.set(x, y, -depth / 2 - 2);
-    container.add(b2);
+    setInstanceMatrix(inst, idx++, new THREE.Vector3(x, y, depth / 2 - inset));
+    setInstanceMatrix(inst, idx++, new THREE.Vector3(x, y, -depth / 2 + inset));
   }
+  container.add(inst);
 }
 
 function buildStatue(scale = 1) {
@@ -350,38 +478,42 @@ function addMiniShrines(container, width, height, depth, protrudeFactor = 0.125,
 
 function addColumns(container, width, height, depth, count, colorHex) {
   const mat = materials.plaster(colorHex);
-  const geo = new THREE.CylinderGeometry(3, 3, 18, 10);
+  const radius = 3;
+  const geo = new THREE.CylinderGeometry(radius, radius, 18, 10);
   const y = height / 4;
+  // Push columns slightly outward so they remain visible beyond cornices.
+  const protrude = Math.max(2, radius * 0.8);
+  const faceOffsetZ = depth / 2 + protrude;
+  const faceOffsetX = width / 2 + protrude;
 
   const xPositions = columnPositions(width, count);
   const zPositions = columnPositions(depth, count);
 
-  for (let side = -1; side <= 1; side += 2) {
-    const face = new THREE.Group();
-    face.position.z = (depth / 2 + 1) * side;
-    face.position.y = y;
-    container.add(face);
+  // front/back instanced
+  const fbCount = xPositions.length * 2;
+  const fb = new THREE.InstancedMesh(geo, mat, fbCount);
+  fb.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  let idx = 0;
+  [-1, 1].forEach(side => {
     xPositions.forEach(x => {
-      const inset = Math.min(width * 0.1, 10);
-      const col = new THREE.Mesh(geo, mat);
-      col.position.x = x > 0 ? x + inset : x - inset;
-      face.add(col);
+      const pos = new THREE.Vector3(x, y, faceOffsetZ * side);
+      setInstanceMatrix(fb, idx++, pos);
     });
-  }
+  });
+  container.add(fb);
 
-  for (let side = -1; side <= 1; side += 2) {
-    const face = new THREE.Group();
-    face.position.x = (width / 2 + 1) * side;
-    face.position.y = y;
-    face.rotation.y = Math.PI / 2;
-    container.add(face);
+  // left/right instanced
+  const lrCount = zPositions.length * 2;
+  const lr = new THREE.InstancedMesh(geo, mat, lrCount);
+  lr.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  idx = 0;
+  [-1, 1].forEach(side => {
     zPositions.forEach(z => {
-      const inset = Math.min(depth * 0.1, 10);
-      const col = new THREE.Mesh(geo, mat);
-      col.position.x = z > 0 ? z + inset : z - inset;
-      face.add(col);
+      const pos = new THREE.Vector3(faceOffsetX * side, y, z);
+      setInstanceMatrix(lr, idx++, pos, new THREE.Euler(0, Math.PI / 2, 0));
     });
-  }
+  });
+  container.add(lr);
 }
 
 function miniShrineClearance(span) {
@@ -407,14 +539,26 @@ function columnPositions(span, count) {
   return positions;
 }
 
-function addKalashas(container, topY, scaleX) {
+function addKalashas(container, topY, scaleX, layout = "ring", spanX = 0) {
   const r = 20 * scaleX;
   const h = 40 * scaleX;
-  const positions = [
-    new THREE.Vector3(0, topY, 0),
-    new THREE.Vector3(-r * 2, topY, r * 2),
-    new THREE.Vector3(r * 2, topY, r * 2)
-  ];
+  const positions = [];
+  const count = 6;
+
+  if (layout === "ridge") {
+    const half = (spanX || r * 10) * 0.45;
+    for (let i = 0; i < count; i++) {
+      const t = count === 1 ? 0.5 : i / (count - 1);
+      const x = THREE.MathUtils.lerp(-half, half, t);
+      positions.push(new THREE.Vector3(x, topY, 0));
+    }
+  } else {
+    const ringRadius = r * 3.2;
+    for (let i = 0; i < count; i++) {
+      const theta = (Math.PI * 2 * i) / count;
+      positions.push(new THREE.Vector3(Math.cos(theta) * ringRadius, topY, Math.sin(theta) * ringRadius));
+    }
+  }
   const mat = materials.metal();
 
   for (const pos of positions) {
@@ -432,17 +576,19 @@ function addKalashas(container, topY, scaleX) {
   }
 
   const railCount = 14;
+  const railGeo = new THREE.ConeGeometry(r * 0.25, h * 0.6, 12);
+  const rail = new THREE.InstancedMesh(railGeo, mat, railCount);
+  rail.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   for (let i = 0; i < railCount; i++) {
     const f = i / (railCount - 1);
     const x = THREE.MathUtils.lerp(-r * 3.5, r * 3.5, f);
     const y = topY;
-    const kal = new THREE.Mesh(new THREE.ConeGeometry(r * 0.25, h * 0.6, 12), mat);
-    kal.position.set(x, y, 0);
-    container.add(kal);
+    setInstanceMatrix(rail, i, new THREE.Vector3(x, y, 0));
   }
+  container.add(rail);
 }
 
-export function buildTower(state) {
+export function buildTower(state, detail = "high", beadVisible = true) {
   const group = new THREE.Group();
   group.name = "Gopuram";
 
@@ -455,7 +601,8 @@ export function buildTower(state) {
     baseScale,
     doorHeightOffset,
     columnCount,
-    visibleTiers
+    visibleTiers,
+    profilePoints
   } = state;
 
   const baseW = 250 * scaleX;
@@ -467,14 +614,13 @@ export function buildTower(state) {
 
   const plinth = addPlinth(baseW, baseD, baseH * 0.35);
   group.add(plinth);
+  // Use actual bounding height of plinth to seat the base flush.
+  const plinthBox = new THREE.Box3().setFromObject(plinth);
+  const plinthTop = plinthBox.max.y;
+  plinth.userData.totalHeight = plinthTop;
 
-  const plinthH = plinth.userData.totalHeight;
-
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(baseW, baseH, baseD),
-    materials.stone()
-  );
-  base.position.y = baseH / 2 + plinthH;
+  const base = buildProfiledPrism(baseW, baseD, baseH, materials.stone(), profilePoints, tierSteps(state));
+  base.position.y = baseH / 2 + plinthTop;
   base.userData.baseW = baseW;
   group.add(base);
   addDoorPlanes(base, baseH, baseD, doorHeightOffset);
@@ -484,7 +630,9 @@ export function buildTower(state) {
   for (let i = 0; i < tiers && i < visibleTiers; i++) {
     const t = i / tiers;
     const baseTierScale = 1 - t * 0.3;
-    const subSteps = 2 + Math.floor(noise2d(i * 0.3, 0) * 2);
+    const subStepsBase = 2 + Math.floor(noise2d(i * 0.3, 0) * 2);
+    const subSteps = detail === "low" ? 1 : detail === "medium" ? Math.max(1, Math.floor(subStepsBase * 0.8)) : subStepsBase;
+    const isTopRendered = i === Math.min(tiers, visibleTiers) - 1;
 
     for (let j = 0; j < subSteps; j++) {
       const subT = j / subSteps;
@@ -493,28 +641,37 @@ export function buildTower(state) {
       const h = tierH / subSteps;
       const yOffset = i * tierH + j * h;
       const noiseOffset = (noise2d((i + j) * 0.3, j * 0.17) - 0.5) * (noiseIntensity * 0.5);
-      const yBase = plinthH + baseH + yOffset + noiseOffset;
+      const yBase = plinthTop + baseH + yOffset + noiseOffset;
 
     const colorHex = palette[(i + j) % palette.length];
     const layer = new THREE.Group();
     layer.position.y = yBase;
 
-      const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials.plaster(colorHex));
-      box.position.y = h / 2;
-      layer.add(box);
+      const tierMesh = buildSteppedTier(w, d, h, colorHex, tierSteps(state), profilePoints);
+      tierMesh.position.y = h / 2;
+      layer.add(tierMesh);
 
-      addPilasters(layer, w, h, d, Math.max(3, columnCount - 1), materials.plaster(colorHex));
-      addNiches(layer, w, h, d);
-      addStripes(layer, w, h, d, colorHex);
-      addStatueRow(layer, w, h, d, Math.max(3, columnCount - 2));
-      const isTopRendered = i === Math.min(tiers, visibleTiers) - 1;
-      if (!isTopRendered) {
-        const shrineColor = palette[state.shrineColorIndex % palette.length];
-        addMiniShrines(layer, w, h, d, state.shrineProtrude ?? 0.125, shrineColor);
+      if (detail !== "low") {
+        addPilasters(layer, w, h, d, Math.max(3, columnCount - 1), materials.plaster(colorHex));
+        addNiches(layer, w, h, d);
+        addStripes(layer, w, h, d, colorHex);
       }
-      addColumns(layer, w, h, d, columnCount, colorHex);
-      addCornice(layer, w, d, colorHex);
-      addBeadRow(layer, w, d, h * 0.05, materials.stoneDark());
+      if (detail === "high") {
+        addStatueRow(layer, w, h, d, Math.max(3, columnCount - 2));
+      }
+      if (!isTopRendered && detail !== "low") {
+        // Match mini-shrine body to the current tier color for cohesive striations.
+        addMiniShrines(layer, w, h, d, state.shrineProtrude ?? 0.125, colorHex);
+      }
+      if (detail !== "low") {
+        // Keep full column count in medium/high LOD so columns remain visible.
+        addColumns(layer, w, h, d, columnCount, colorHex);
+      }
+      // Always draw cornices, even for medium/low LOD.
+      addCornice(layer, w, d, colorHex, profilePoints, tierSteps(state));
+      if (detail === "high" && state.beadEnabled && beadVisible) {
+        addBeadRow(layer, w, d, h * 0.05, materials.stoneDark());
+      }
 
       group.add(layer);
       topY = Math.max(topY, yBase + h);
@@ -523,6 +680,30 @@ export function buildTower(state) {
 
   addKalashas(group, topY, scaleX);
   return group;
+}
+
+function tierSteps(state) {
+  return 4;
+}
+
+function buildProfiledPrism(width, depth, height, material, profilePoints, steps = 4) {
+  const shape = profileToShape(profilePoints, width, depth, steps, 0.02);
+  const extrudeSettings = { depth: height, bevelEnabled: false };
+  const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  geo.rotateX(-Math.PI / 2);
+  // Center geometry vertically so bottom sits at -height/2 and top at +height/2.
+  geo.translate(0, -height / 2, 0);
+  return new THREE.Mesh(geo, material);
+}
+
+function buildSteppedTier(width, depth, height, colorHex, steps, profilePoints) {
+  const shape = profileToShape(profilePoints, width, depth, steps, 0.02);
+  const extrudeSettings = { depth: height, bevelEnabled: false };
+  const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  geo.rotateX(-Math.PI / 2);
+  // Center vertically so placement is consistent with base.
+  geo.translate(0, -height / 2, 0);
+  return new THREE.Mesh(geo, materials.plaster(colorHex));
 }
 
 export function createRenderer(container) {

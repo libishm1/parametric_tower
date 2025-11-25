@@ -7,6 +7,8 @@ Parametric Gopuram generator rebuilt in Three.js with the original p5.js control
 - Three.js scene with OrbitControls and flat-shaded materials for crisp forms.
 - UI sliders (lil-gui) matching the p5.js controls: scale X/Y/Z, striations, noise intensity, base scale, door height offset, column count, visible tiers.
 - Procedural stack with cornices, stripes, mini-shrines, columns, and kalasha finials; basic Perlin-style perturbation for tier offsets.
+- Editable tier footprint profile (via GUI) with live plot and extrusion for tiers, cornices, and base.
+- Granite noise textures for stone/walls and lime-plaster noise for tiers; walls now form crisp rings with stepped plinths.
 - Palette cycling that matches the original Panchavarnam colors; hooks ready for texture maps later.
 
 ## Getting Started

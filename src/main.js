@@ -53,7 +53,7 @@ scene.add(axes);
 const overlay = document.getElementById("overlay");
 if (overlay) overlay.textContent = "Scene initializing...";
 
-const autoRotate = { enabled: false, speed: 0.4 };
+const autoRotate = { enabled: true, speed: 0.18 };
 const clock = new THREE.Clock();
 
 let state = { ...defaultState, profilePoints: cloneProfile(defaultProfile) };
@@ -66,6 +66,8 @@ let lastDetailKey = null;
 let lastCamCheck = { pos: new THREE.Vector3(), time: 0 };
 let profileCanvas = null;
 let profileTextarea = null;
+const LOD_INTERVAL = 200; // ms refresh for LOD checks
+setInterval(() => maybeUpdateDetail(true), LOD_INTERVAL);
 rebuild({ fit: true, camPos: camera.position });
 loadHDR();
 
@@ -546,15 +548,17 @@ function detailForPos(camPos, towerPos, st = state) {
   const near = Math.min(st.lodNear, st.lodFar - 50);
   const far = Math.max(st.lodFar, near + 50);
   const dist = camPos.distanceTo(towerPos);
-  if (dist < near) return "high";
-  if (dist < far) return "medium";
+  const hysteresis = near * 0.05;
+  const highCut = Math.max(50, near - hysteresis);
+  const medCut = Math.max(highCut + 25, far - hysteresis);
+  if (dist < highCut) return "high";
+  if (dist < medCut) return "medium";
   return "low";
 }
 
-function maybeUpdateDetail() {
+function maybeUpdateDetail(force = false) {
   const now = performance.now();
-  const maxInterval = 250; // ms
-  if (now - lastCamCheck.time < maxInterval) return;
+  if (!force && now - lastCamCheck.time < LOD_INTERVAL) return;
   const sig = computeDetailSignature(camera.position);
   lastCamCheck.pos.copy(camera.position);
   lastCamCheck.time = now;
